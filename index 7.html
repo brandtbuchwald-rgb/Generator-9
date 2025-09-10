@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Rediscover Build Generator (purpgenerate • pet+fury FULL BUILD)</title>
+<style>
+:root{
+  --bg:#120d0b; --panel:#2d2218; --ink:#f4e9d8; --muted:#cdbca6;
+  --chip:#3a2a1d; --chipb:#6d5946; --purple:#3a184b; --purpleB:#a55dff; --purpleInk:#efe6ff;
+}
+body{background:var(--bg);color:var(--ink);font-family:sans-serif;margin:0}
+h1{margin:16px;font-size:1.6rem}
+.panel{background:var(--panel);margin:12px;border-radius:12px;padding:12px}
+fieldset{border:none;margin:6px 0;padding:0}
+legend{font-weight:bold;margin-bottom:4px}
+label{margin-right:8px}
+ul{margin:4px 0 12px 22px;padding:0}
+li{margin:3px 0}
+.badge{background:var(--chip);border:1px solid var(--chipb);border-radius:8px;padding:2px 6px}
+.purple{background:var(--purple);border-color:var(--purpleB);color:var(--purpleInk);font-weight:bold}
+</style>
+</head>
+<body>
+<h1>Rediscover Build Generator <span style="font-size:.8em;color:var(--muted)">(petfury full build)</span></h1>
+
+<div class="panel">
+  <fieldset>
+    <legend>Class</legend>
+    <label><input type="radio" name="klass" value="Paladin">Paladin</label>
+    <label><input type="radio" name="klass" value="Sorcerer" checked>Sorcerer</label>
+    <label><input type="radio" name="klass" value="Ranger">Ranger</label>
+    <label><input type="radio" name="klass" value="Berserker">Berserker</label>
+  </fieldset>
+  <fieldset>
+    <legend>Build Focus</legend>
+    <label><input type="radio" name="focus" value="Tank">Tank</label>
+    <label><input type="radio" name="focus" value="Demon" checked>Demon</label>
+    <label><input type="radio" name="focus" value="Animal">Animal</label>
+    <label><input type="radio" name="focus" value="Primate">Primate</label>
+    <label><input type="radio" name="focus" value="Undead">Undead</label>
+    <label><input type="radio" name="focus" value="Boss">Boss</label>
+  </fieldset>
+  <fieldset>
+    <legend>Gear Type</legend>
+    <label><input type="radio" name="gear" value="Primal">Primal</label>
+    <label><input type="radio" name="gear" value="Original">Original</label>
+    <label><input type="radio" name="gear" value="Chaos" checked>Chaos</label>
+    <label><input type="radio" name="gear" value="Abyss">Abyss</label>
+  </fieldset>
+  <fieldset id="furyField" style="display:none">
+    <legend>Berserker Fury</legend>
+    <label><input type="checkbox" id="furyToggle"> Fury Mode ON</label>
+  </fieldset>
+  <fieldset>
+    <legend>Pet Gear</legend>
+    <label><input type="radio" name="pet" value="None" checked> None</label>
+    <label><input type="radio" name="pet" value="B"> B (+6% SPD,+6% Crit)</label>
+    <label><input type="radio" name="pet" value="A"> A (+9% SPD,+9% Crit)</label>
+    <label><input type="radio" name="pet" value="S"> S (+12% SPD,+12% Crit)</label>
+  </fieldset>
+  <button onclick="optimize()">⚡ Optimize</button>
+</div>
+
+<div class="panel">
+  <h3>Chosen Stats per Slot</h3>
+  <div id="slots"></div>
+</div>
+
+<div class="panel">
+  <h3>Requirements Summary</h3>
+  <div id="summary"></div>
+</div>
+
+<script>
+const SLOTS=["Weapon","Necklace","Helm","Chest","Ring","Belt","Gloves","Boots"];
+const PET={None:{spd:0,crit:0},B:{spd:6,crit:6},A:{spd:9,crit:9},S:{spd:12,crit:12}};
+const VAL={ATKSPD:{primal:.16,original:.16,chaos:.16,abyss:.16},
+EVA:{primal:12,original:12,chaos:14,abyss:16},CRIT:{primal:14,original:14,chaos:16,abyss:16},
+ATK:{primal:23,original:23,chaos:26,abyss:29},CRITDMG:{primal:35,original:35,chaos:40,abyss:45},
+MONSTER:{primal:35,original:35,chaos:40,abyss:45},DR:{primal:17,original:17,chaos:19,abyss:21},
+HP:{primal:23,original:23,chaos:26,abyss:29},DEF:{primal:23,original:23,chaos:26,abyss:29},
+CAST_EVA:{primal:17,original:17,chaos:19,abyss:19},CAST_DEMON:{primal:17,original:17,chaos:19,abyss:19}};
+const PURPLE={Chaos:{Ring:"CRITDMG40",Necklace:"CRITDMG40",Helm:"BOSS40",Belt:"BOSS40",Chest:"ATK26",Gloves:"ATK26",Boots:"ATK26",Weapon:"W"},
+Abyss:{Ring:"CRITDMG45",Necklace:"CRITDMG45",Helm:"BOSS45",Belt:"BOSS45",Chest:"ATK29",Gloves:"ATK29",Boots:"ATK29",Weapon:"W"}};
+const RUNES={atkspd:-5,eva:+6,crit:+6,dr:+12};
+
+function read(name){return[...document.querySelectorAll(`input[name="${name}"]`)].find(r=>r.checked)?.value}
+function toTierKey(g){return g.toLowerCase();}
+function labelMonster(focus){return(focus==="Tank")?"Boss DMG":`${focus} DMG`;}
+function maxLines(gear){const g=toTierKey(gear);return(g==="chaos"||g==="abyss")?5:4;}
+function addLine(arr,txt,purple=false){arr.push({txt, purple});}
+
+function optimize(){
+  const klass=read("klass"),focus=read("focus"),gear=read("gear"),petSel=read("pet"),fury=document.getElementById("furyToggle").checked;
+  document.getElementById("furyField").style.display=(klass==="Berserker")?"block":"none";
+  const tier=toTierKey(gear);const pet=PET[petSel];
+  let atkspdTarget=(focus==="Tank"&&gear==="Primal")?45:25;const evaCap=40,critCap=(focus==="Tank"?0:50),drCap=(focus==="Tank"?100:0);
+  let ignoreAtkSpd=false;if(klass==="Berserker"&&fury&&petSel==="S"){ignoreAtkSpd=true;}
+  const totals={atkspd:pet.spd,eva:0,crit:pet.crit,dr:0};const usedRunes={atkspd:false,eva:false,crit:false,dr:false};
+  const chosen={};
+  for(const slot of SLOTS){
+    const lines=[];const limit=maxLines(gear);let room=limit;
+    if(limit===5){if(slot==="Weapon"){addLine(lines,(focus==="Tank")?"HP +52% (5th)":"Crit DMG +80% (5th)",true);room--;}else{const tag=PURPLE[gear]?.[slot];if(tag){if(tag.startsWith("CRITDMG"))addLine(lines,`Crit DMG +${tag.endsWith("40")?40:45}% (5th)`,true);if(tag.startsWith("BOSS"))addLine(lines,`Boss DMG +${tag.endsWith("40")?40:45}% (5th)`,true);if(tag==="ATK26")addLine(lines,"ATK% +26% (5th)",true);if(tag==="ATK29")addLine(lines,"ATK% +29% (5th)",true);room--;}}}
+    if(slot==="Weapon"){addLine(lines,focus==="Tank"?`Cast Evasion +${VAL.CAST_EVA[tier]}%`:`Cast Demon Lord +${VAL.CAST_DEMON[tier]}%`);}
+    let hasCore=false;const usedStats=new Set();
+    function tryAdd(stat){if(room<=0)return false;if(usedStats.has(stat))return false;if(["atkspd","eva","crit"].includes(stat)){if(hasCore)return false;hasCore=true;}
+      let txt="";if(stat==="atkspd"){if(ignoreAtkSpd)return false;txt=`ATK SPD +${(VAL.ATKSPD[tier]*100).toFixed(0)}%`;totals.atkspd+=VAL.ATKSPD[tier]*100;}
+      if(stat==="eva"){txt=`Evasion +${VAL.EVA[tier]}%`;totals.eva+=VAL.EVA[tier];}
+      if(stat==="crit"){txt=`Crit +${VAL.CRIT[tier]}%`;totals.crit+=VAL.CRIT[tier];}
+      if(stat==="dr"){txt=`Damage Reduce +${VAL.DR[tier]}%`;totals.dr+=VAL.DR[tier];}
+      if(stat==="hp"){txt=`HP +${VAL.HP[tier]}%`;}
+      if(stat==="def"){txt=`DEF +${VAL.DEF[tier]}%`;}
+      if(stat==="atkpct"){txt=`ATK% +${VAL.ATK[tier]}%`;}
+      if(stat==="critdmg"){txt=`Crit DMG +${VAL.CRITDMG[tier]}%`;}
+      if(stat==="monster"){txt=`${labelMonster(focus)} +${VAL.MONSTER[tier]}%`;}
+      addLine(lines,txt,false);usedStats.add(stat);room--;return true;}
+    const TANK_PRIORITY=["atkspd","eva","dr","hp","def","atkpct","critdmg"];
+    const DPS_PRIORITY=["atkspd","eva","crit","atkpct","monster","critdmg"];
+    if(focus==="Tank"){for(const st of TANK_PRIORITY){tryAdd(st);}while(room>0&&(tryAdd("atkpct")||tryAdd("critdmg"))){}}
+    else{for(const st of DPS_PRIORITY){tryAdd(st);}while(room>0&&(tryAdd("atkpct")||tryAdd("critdmg")||tryAdd("monster"))){}}while(lines.length<limit){lines.push({txt:"",purple:false});}
+    chosen[slot]=lines.slice(0,limit);
+  }
+  function need(have,cap){return Math.max(0,cap-have);}
+  if(!ignoreAtkSpd&&need(totals.atkspd,atkspdTarget)>0){totals.atkspd+=5;usedRunes.atkspd=true;}
+  if(focus==="Tank"){if(need(totals.eva,40)>0){totals.eva+=6;usedRunes.eva=true;}if(need(totals.dr,drCap)>0){totals.dr+=12;usedRunes.dr=true;}}
+  else{if(need(totals.eva,40)>0){totals.eva+=6;usedRunes.eva=true;}if(need(totals.crit,critCap)>0){totals.crit+=6;usedRunes.crit=true;}}
+  const slotsDiv=document.getElementById("slots");slotsDiv.innerHTML="";
+  for(const slot of SLOTS){const items=(chosen[slot]||[]).map(o=>o.txt?`<li>${o.purple?`<span class="badge purple">${o.txt}</span>`:o.txt}</li>`:"<li>—</li>").join("");
+    slotsDiv.innerHTML+=`<div class="slot"><b>${slot}</b><ul>${items}</ul></div>`;}
+  const sum=document.getElementById("summary");const parts=[];
+  if(ignoreAtkSpd){parts.push(`<div>▸ ATK SPD: ignored (Berserker Fury + Pet ${petSel})</div>`);}
+  else{parts.push(`<div>▸ ATK SPD: ${totals.atkspd>=atkspdTarget?"OK":"need "+Math.max(0,(atkspdTarget-totals.atkspd)).toFixed(0)+"%"}${usedRunes.atkspd?" via Rune":""}${pet.spd?` + Pet(${petSel})`:""}</div>`);}
+  parts.push(`<div>▸ Evasion: ${totals.eva>=40?"OK":"need "+Math.max(0,(40-totals.eva)).toFixed(0)+"%"}${usedRunes.eva?" via Rune":""}</div>`);
+  if(focus==="Tank"){parts.push(`<div>▸ DR: ${totals.dr>=drCap?"OK":"need "+Math.max(0,(drCap-totals.dr)).toFixed(0)+"%"}${usedRunes.dr?" via Rune":""}</div>`);}
+  else{parts.push(`<div>▸ Crit: ${totals.crit>=critCap?"OK":"need "+Math.max(0,(critCap-totals.crit)).toFixed(0)+"%"}${usedRunes.crit?" via Rune":""}${pet.crit?` + Pet(${petSel})`:""}</div>`);}
+  sum.innerHTML=parts.join("");
+}
+</script>
+</body>
+</html>
